@@ -13,13 +13,164 @@ from sklearn.preprocessing import StandardScaler
 import tensorflow 
 import random
 
-from torch.utils.data import Dataset, DataLoader,TensorDataset,random_split,SubsetRandomSampler, ConcatDataset
+#from torch.utils.data import Dataset, DataLoader,TensorDataset,random_split,SubsetRandomSampler, ConcatDataset
+from torch.utils.data.sampler import SubsetRandomSampler, SequentialSampler 
 #from torch.nn import functional as F
 #import torchvision
 #from torchvision import datasets,transforms
 #import torchvision.transforms as transforms
 
+#Set global properties
+
 torch.manual_seed(42)
 random_seed = 42
 
 torch.use_deterministic_algorithms(True)
+
+#Define model
+
+class TestDataset(torch.utils.data.Dataset):
+  def __init__(self, X, y, scale_data=True):
+    if not torch.is_tensor(X) and not torch.is_tensor(y):
+      if scale_data:
+          X = StandardScaler().fit_transform(X)
+      self.X = torch.from_numpy(X)
+      self.y = torch.from_numpy(y)
+
+  def __len__(self):
+      return len(self.X)
+  
+  def __getitem__(self, i):
+      return self.X[i], self.y[i]
+
+class MLP(nn.Module):
+  def __init__(self):
+    super().__init__()
+    self.layers = nn.Sequential(
+      nn.Linear(8, 150),
+      nn.ReLU(),
+      nn.Linear(150, 150),
+      nn.ReLU(),
+      nn.Linear(150, 150),
+      nn.ReLU(),
+      nn.Linear(150, 1)
+    )
+
+  def forward(self, x):
+    return self.layers(x)
+
+#Import data and prepare dataset
+
+%cd drive/MyDrive/Colab Notebooks/ #Access google drive
+
+test_numpy = np.loadtxt("kari_9.csv", dtype = np.float32, delimiter = ",") 
+test_numpy_y = test_numpy[:,0]
+test_numpy_x = test_numpy[:,[1, 2, 3, 4, 5, 6, 7, 8]]
+
+dataset = TestDataset(test_numpy_x, test_numpy_y)
+
+dataset_size = len(dataset)
+validation_split = 0.8
+validation_split_upper = 1
+
+indices = list(range(dataset_size))
+split = int(np.floor(validation_split * dataset_size))
+split_upper = int(np.floor(validation_split_upper * dataset_size))
+train_indices, val_indices = indices[:split]+indices[split_upper:], indices[split:split_upper]
+
+train_sampler = SubsetRandomSampler(train_indices)
+valid_dataset = Subset(dataset, val_indices)
+
+train_loader = torch.utils.data.DataLoader(dataset, batch_size=64, sampler=train_sampler)
+validation_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=64, shuffle=False)
+
+#Prepare model
+
+mlp = MLP()
+loss_function = nn.SmoothL1Loss()
+optimizer = torch.optim.Adam(mlp.parameters(), lr=2e-3)
+
+def valid_epoch(model,device,dataloader,loss_fn):
+    valid_loss, val_correct = 0.0, 0
+
+    MAPE = 0.0
+    MAE = 0.0
+    model.eval()
+    for x, y in dataloader:
+
+        x, y = x.to(device), y.to(device)
+        y = y.view(-1, 1)
+ 
+        output = model(x)
+        loss=loss_fn(output,y)
+        valid_loss+=loss.item()*x.size(0)
+        scores, predictions = torch.max(output.data,1)
+        
+        val_correct+=(abs(output-y) < y/20).sum().item()
+        output = output.detach().numpy()
+        y = y.detach().numpy()
+        
+        for j in range(len(output)):
+          MAPE += abs((y[j]-output[j])/y[j])
+          MAE += abs(y[j]-output[j])
+
+    return valid_loss,val_correct, MAPE, MAE
+    
+#Perform training
+
+mlp.train()
+
+for epoch in range(0, 5): 
+    
+    print(f'Starting epoch {epoch+1}')
+    
+    current_loss = 0.0
+    epoch_loss = 0.0
+    MAPE = 0
+    MAE = 0
+    
+    for i, data in enumerate(train_loader, 0):
+ 
+
+      inputs, targets = data
+      inputs, targets = inputs.float(), targets.float()
+      targets = targets.reshape((targets.shape[0], 1))
+      
+      optimizer.zero_grad()
+      
+      outputs = mlp(inputs)
+
+      loss = loss_function(outputs, targets)
+      for j in range(len(outputs)):
+        MAPE += abs((targets[j]-outputs[j])/targets[j])
+        MAE += abs(targets[j]-outputs[j])
+
+      loss.backward()
+      
+      optimizer.step()
+      
+      current_loss += loss.item()
+      epoch_loss += loss.item()
+      if i % 100 == 99:
+          print('Loss after mini-batch %5d: %.3f' %
+                (i + 1, current_loss / 100))
+          current_loss = 0.0
+    epoch_loss = epoch_loss/count
+    MAPE = MAPE*100/len(train_loader.sampler)
+    MAE = MAE/len(train_loader.sampler)
+    print('Smooth loss for epoch is: %5f\n' % epoch_loss)
+    print('MAE for epoch is: %5f\n' % MAE)
+    print('MAPE for epoch is: %5f\n' % MAPE)
+
+print('Training is done.')
+
+#Perform testing
+
+test_loss, test_correct, test_MAPE, test_MAE=valid_epoch(mlp,device,validation_loader,loss_function)
+
+test_loss = test_loss / len(validation_loader.sampler)
+test_correct = test_correct / len(validation_loader.sampler) * 100
+test_MAPE = test_MAPE * 100 / len(validation_loader.sampler)
+test_MAE = test_MAE/len(validation_loader.sampler)
+
+print('Test loss: %5f Test correct: %5f Test MAPE: %5f Test MAE: %5f'%(test_loss, test_correct, test_MAPE, test_MAE))
