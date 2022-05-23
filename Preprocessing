@@ -1,11 +1,10 @@
-#
+##Example file for processing the provided FE simulation data. Temperature data and the eight most important parameters are extracted and saved in a new data file.
+##Which columns contain the relevant data varies from file to file, this example contains the values for system 9.
 
 f = open("[DATA PATH]")
 g = open("[PROCESSED DATA PATH]", "w")
 
-
 data = f.readlines()
-
 
 for i in range(len(data)-1):
     linedata = data[i+1].split(',')#Ignore first line with labels
