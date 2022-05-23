@@ -1,10 +1,25 @@
 #Import modules
 
-import pandas as pd
+#import pandas as pd
 import torch
-from torch import nn
-from sklearn.preprocessing import StandardScaler
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.dataset import Subset
+
 import numpy as np
 import csv
 import sklearn
+from sklearn.preprocessing import StandardScaler
 import tensorflow 
+import random
+
+from torch.utils.data import Dataset, DataLoader,TensorDataset,random_split,SubsetRandomSampler, ConcatDataset
+#from torch.nn import functional as F
+#import torchvision
+#from torchvision import datasets,transforms
+#import torchvision.transforms as transforms
+
+torch.manual_seed(42)
+random_seed = 42
+
+torch.use_deterministic_algorithms(True)
